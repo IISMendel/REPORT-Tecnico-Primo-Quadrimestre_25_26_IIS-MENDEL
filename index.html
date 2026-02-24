@@ -930,41 +930,92 @@
         }
 
         async function exportDOCX() {
-            if (GLOBAL_EXPORT_DATA.length === 0) return;
-            const btn = document.querySelector('#save-btn-container button');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Generazione...';
+    const btn = document.querySelector('.dropdown-open button') || document.querySelector('#save-btn-container button');
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Generazione...';
 
-            try {
-                const { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType, HeadingLevel, ImageRun, TextRun } = docx;
-                const tableRows = [new TableRow({ children: [new TableCell({ children: [new Paragraph({ text: "Classe", bold: true })] }), new TableCell({ children: [new Paragraph({ text: "Tot. Alunni", bold: true })] }), new TableCell({ children: [new Paragraph({ text: "Nessuna Insuff.", bold: true })] }), new TableCell({ children: [new Paragraph({ text: "1-2 Insuff.", bold: true })] }), new TableCell({ children: [new Paragraph({ text: "3+ Insuff.", bold: true })] })]})];
-                GLOBAL_EXPORT_DATA.forEach(row => { tableRows.push(new TableRow({ children: [new TableCell({ children: [new Paragraph(row.Classe)] }), new TableCell({ children: [new Paragraph(row.Totale_Alunni.toString())] }), new TableCell({ children: [new Paragraph(row.Nessuna_Insufficienza.toString())] }), new TableCell({ children: [new Paragraph(row.Insufficienze_1_2.toString())] }), new TableCell({ children: [new Paragraph(row.Insufficienze_3_piu.toString())] })]})); });
+    try {
+        const { Document, Packer, Paragraph, TextRun, ImageRun } = docx;
+        const images = [];
 
-                const chartImages = [];
-                const captureElement = async (id, title) => {
-                    const el = document.getElementById(id);
-                    if (el) {
-                        const bgColor = IS_LIGHT_MODE ? '#ffffff' : '#172554';
-                        const canvas = await html2canvas(el, { scale: 2, backgroundColor: bgColor });
-                        chartImages.push({ title: title, data: canvas.toDataURL("image/png") });
-                    }
-                };
+        const chartNodes = [
+            document.getElementById('chart-parallel'),
+            document.getElementById('chart-classes'),
+            ...document.querySelectorAll('#subject-charts-container .highcharts-container')
+        ].filter(el => el !== null);
 
-                await captureElement('container-chart-parallel', 'Andamento Classi Parallele');
-                await captureElement('container-chart-classes', 'Dettaglio Studenti per Classe');
+        for (let i = 0; i < chartNodes.length; i++) {
+            const el = chartNodes[i];
+            
+            let chartTitle = "Grafico " + (i + 1);
+            const panel = el.closest('.glass-panel');
+            if (panel) {
+                const heading = panel.querySelector('h3, h4');
+                if (heading) {
+                    chartTitle = heading.innerText.trim();
+                }
+            }
 
-                const docChildren = [new Paragraph({ text: "Report Scrutini - Istituto Tecnico Mendel", heading: HeadingLevel.HEADING_1, spacing: { after: 300 } }), new Paragraph({ text: `Totale Alunni: ${GLOBAL_STATS.total} | Senza Debiti: ${GLOBAL_STATS.clean} | Con Insufficienze: ${GLOBAL_STATS.debt}`, spacing: { after: 300 } }), new Paragraph({ text: "Tabella Sintetica Dati", heading: HeadingLevel.HEADING_2, spacing: { after: 200 } }), new Table({ rows: tableRows, width: { size: 100, type: WidthType.PERCENTAGE } }), new Paragraph({ text: "", spacing: { after: 400 } }), new Paragraph({ text: "Grafici e Analisi Visiva", heading: HeadingLevel.HEADING_2, spacing: { after: 200 } })];
-                chartImages.forEach(img => { docChildren.push(new Paragraph({ children: [new TextRun({ text: img.title, bold: true, size: 24 })], spacing: { before: 400, after: 100 } })); docChildren.push(new Paragraph({ children: [new ImageRun({ data: base64ToArrayBuffer(img.data), transformation: { width: 550, height: 350 }, type: "png" })], spacing: { after: 200 } })); });
-
-                const doc = new Document({ sections: [{ children: docChildren }] });
-                const blob = await Packer.toBlob(doc);
-                saveAs(blob, "Report_Scrutini_Tecnico_Completo.docx");
-            } catch (err) { console.error(err); alert("Errore generazione Word: " + err.message); } finally { btn.innerHTML = originalText; }
+            const canvas = await html2canvas(el, {
+                scale: 2, 
+                backgroundColor: '#0f172a' 
+            });
+            
+            images.push({
+                title: chartTitle,
+                data: canvas.toDataURL('image/png').split(',')[1]
+            });
         }
 
-        function loadDemoData() {
-            // ... (demo data logic remains same) ...
-        }
+        const docChildren = [];
+        
+        docChildren.push(
+            new Paragraph({
+                children: [new TextRun({ text: "Report Scrutini Tecnico", bold: true, size: 36 })],
+                spacing: { after: 400 }
+            })
+        );
+
+        images.forEach(img => {
+            docChildren.push(
+                new Paragraph({ 
+                    children: [new TextRun({ text: img.title, bold: true, size: 24 })], 
+                    spacing: { before: 400, after: 100 } 
+                })
+            );
+            docChildren.push(
+                new Paragraph({ 
+                    children: [new ImageRun({ 
+                        data: base64ToArrayBuffer(img.data), 
+                        transformation: { width: 550, height: 350 }, 
+                        type: "png" 
+                    })], 
+                    spacing: { after: 200 } 
+                })
+            );
+        });
+
+        const doc = new Document({ sections: [{ children: docChildren }] });
+        const blob = await Packer.toBlob(doc);
+        saveAs(blob, "Report_Scrutini_Tecnico_Completo.docx");
+
+    } catch (err) { 
+        console.error(err); 
+        alert("Errore generazione Word: " + err.message); 
+    } finally { 
+        if (btn) btn.innerHTML = originalText; 
+    }
+}
+
+function base64ToArrayBuffer(base64) {
+    const binary_string = window.atob(base64);
+    const len = binary_string.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binary_string.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
     </script>
 
 </body></html>
